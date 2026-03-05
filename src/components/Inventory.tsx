@@ -19,6 +19,8 @@ export default function Inventory() {
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategoryId, setFilterCategoryId] = useState('');
+  const [filterSubcategoryId, setFilterSubcategoryId] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isSubcategoryModalOpen, setIsSubcategoryModalOpen] = useState(false);
@@ -71,9 +73,12 @@ export default function Inventory() {
     }
   }
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = !filterCategoryId || p.category_id === filterCategoryId;
+    const matchesSubcategory = !filterSubcategoryId || p.subcategory_id === filterSubcategoryId;
+    return matchesSearch && matchesCategory && matchesSubcategory;
+  });
 
   async function handleAddCategory(e: FormEvent) {
     e.preventDefault();
@@ -192,39 +197,83 @@ export default function Inventory() {
   return (
     <div className="space-y-6">
       {/* Actions Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-        <div className="relative flex-1 max-w-md group">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-fundacion-blue transition-colors" />
-          <input
-            type="text"
-            placeholder="Buscar por nombre..."
-            className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-fundacion-blue/10 focus:border-fundacion-blue transition-all shadow-sm"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-        <div className="flex items-center space-x-4">
-          <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-fundacion-yellow/10 border border-fundacion-yellow/20 rounded-xl">
-            <AlertCircle className="w-4 h-4 text-fundacion-orange" />
-            <span className="text-[10px] font-black text-fundacion-orange uppercase tracking-widest">Tip: Revisa el stock crítico</span>
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="relative flex-1 max-w-md group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-fundacion-blue transition-colors" />
+            <input
+              type="text"
+              placeholder="Buscar por nombre..."
+              className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-fundacion-blue/10 focus:border-fundacion-blue transition-all shadow-sm"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
           </div>
-          <button 
-            onClick={() => {
-              setEditingProduct(null);
-              setFormData({
-                name: '',
-                subcategory_id: '',
-                description: '',
-                current_stock: 0,
-                category_id: ''
-              });
-              setIsModalOpen(true);
+          <div className="flex items-center space-x-4">
+            <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-fundacion-yellow/10 border border-fundacion-yellow/20 rounded-xl">
+              <AlertCircle className="w-4 h-4 text-fundacion-orange" />
+              <span className="text-[10px] font-black text-fundacion-orange uppercase tracking-widest">Tip: Revisa el stock crítico</span>
+            </div>
+            <button 
+              onClick={() => {
+                setEditingProduct(null);
+                setFormData({
+                  name: '',
+                  subcategory_id: '',
+                  description: '',
+                  current_stock: 0,
+                  category_id: ''
+                });
+                setIsModalOpen(true);
+              }}
+              className="flex items-center px-6 py-3 bg-fundacion-blue text-white rounded-2xl text-sm font-black hover:bg-blue-800 shadow-xl shadow-blue-900/20 transition-all active:scale-95 uppercase tracking-widest"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Nuevo Producto
+            </button>
+          </div>
+        </div>
+
+        {/* Filters Row */}
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-slate-400" />
+            <span className="text-xs font-bold text-slate-500 uppercase">Filtrar por:</span>
+          </div>
+          <select
+            className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-fundacion-blue/10"
+            value={filterCategoryId}
+            onChange={(e) => {
+              setFilterCategoryId(e.target.value);
+              setFilterSubcategoryId('');
             }}
-            className="flex items-center px-6 py-3 bg-fundacion-blue text-white rounded-2xl text-sm font-black hover:bg-blue-800 shadow-xl shadow-blue-900/20 transition-all active:scale-95 uppercase tracking-widest"
           >
-            <Plus className="w-4 h-4 mr-2" />
-            Nuevo Producto
-          </button>
+            <option value="">Todas las Categorías</option>
+            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select
+            className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-fundacion-blue/10 disabled:opacity-50"
+            disabled={!filterCategoryId}
+            value={filterSubcategoryId}
+            onChange={(e) => setFilterSubcategoryId(e.target.value)}
+          >
+            <option value="">Todas las Subcategorías</option>
+            {subcategories
+              .filter(s => s.category_id === filterCategoryId)
+              .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          {(filterCategoryId || filterSubcategoryId || searchQuery) && (
+            <button 
+              onClick={() => {
+                setFilterCategoryId('');
+                setFilterSubcategoryId('');
+                setSearchQuery('');
+              }}
+              className="text-xs font-bold text-fundacion-red hover:underline"
+            >
+              Limpiar filtros
+            </button>
+          )}
         </div>
       </div>
 

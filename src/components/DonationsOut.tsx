@@ -1,5 +1,5 @@
 import { useEffect, useState, FormEvent } from 'react';
-import { Plus, Search, Calendar, User, Package, X, UserCheck, Trash2 } from 'lucide-react';
+import { Plus, Search, Calendar, User, Package, X, UserCheck, Trash2, Filter } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { DonationOut, Beneficiary, Product, Category, Subcategory } from '../types';
 import { format } from 'date-fns';
@@ -13,6 +13,10 @@ export default function DonationsOut() {
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBeneficiaryModalOpen, setIsBeneficiaryModalOpen] = useState(false);
+  const [newBeneficiaryName, setNewBeneficiaryName] = useState('');
+  const [newBeneficiaryIdNumber, setNewBeneficiaryIdNumber] = useState('');
+  const [isSavingBeneficiary, setIsSavingBeneficiary] = useState(false);
 
   const [formData, setFormData] = useState({
     beneficiary_id: '',
@@ -21,6 +25,11 @@ export default function DonationsOut() {
     delivered_by: '',
     notes: ''
   });
+
+  // Filter states for the main table
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategoryId, setFilterCategoryId] = useState('');
+  const [filterSubcategoryId, setFilterSubcategoryId] = useState('');
 
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
   const [selectedSubcategoryId, setSelectedSubcategoryId] = useState('');
@@ -39,16 +48,22 @@ export default function DonationsOut() {
         { data: categoriesData },
         { data: subcategoriesData }
       ] = await Promise.all([
-        supabase.from('donations_out').select('*, beneficiary:beneficiaries(*), product:products(*)').order('created_at', { ascending: false }),
+        supabase.from('donations_out').select('*, beneficiary:beneficiaries(*), product:products(*, subcategory:subcategories(*))').order('created_at', { ascending: false }),
         supabase.from('beneficiaries').select('*').order('name'),
-        supabase.from('products').select('*').order('name'),
+        supabase.from('products').select('*, subcategory:subcategories(*)').order('name'),
         supabase.from('categories').select('*').order('name'),
         supabase.from('subcategories').select('*').order('name')
       ]);
 
+      // Flatten products to include category_id for filtering
+      const flattenedProducts = (productsData || []).map(p => ({
+        ...p,
+        category_id: p.subcategory?.category_id
+      }));
+
       setDonations(donationsData || []);
       setBeneficiaries(beneficiariesData || []);
-      setProducts(productsData || []);
+      setProducts(flattenedProducts);
       setCategories(categoriesData || []);
       setSubcategories(subcategoriesData || []);
     } catch (error) {
@@ -99,29 +114,121 @@ export default function DonationsOut() {
     }
   }
 
+  async function handleAddBeneficiary(e: FormEvent) {
+    e.preventDefault();
+    if (!newBeneficiaryName.trim() || !newBeneficiaryIdNumber.trim()) {
+      alert('Nombre y Cédula son obligatorios');
+      return;
+    }
+    try {
+      setIsSavingBeneficiary(true);
+      const { data, error } = await supabase
+        .from('beneficiaries')
+        .insert([{ 
+          name: newBeneficiaryName.trim(), 
+          id_number: newBeneficiaryIdNumber.trim() 
+        }])
+        .select()
+        .single();
+      if (error) throw error;
+      
+      setBeneficiaries([...beneficiaries, data]);
+      setFormData({ ...formData, beneficiary_id: data.id });
+      setNewBeneficiaryName('');
+      setNewBeneficiaryIdNumber('');
+      setIsBeneficiaryModalOpen(false);
+    } catch (error) {
+      console.error('Error creating beneficiary:', error);
+      alert('Error al crear el beneficiario (puede que la cédula ya esté registrada)');
+    } finally {
+      setIsSavingBeneficiary(false);
+    }
+  }
+
+  const filteredDonations = donations.filter(d => {
+    const matchesSearch = (d.product?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                         (d.beneficiary?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         (d.beneficiary?.id_number || '').toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const productCategoryId = d.product?.subcategory?.category_id;
+    const productSubcategoryId = d.product?.subcategory_id;
+    
+    const matchesCategory = !filterCategoryId || productCategoryId === filterCategoryId;
+    const matchesSubcategory = !filterSubcategoryId || productSubcategoryId === filterSubcategoryId;
+    
+    return matchesSearch && matchesCategory && matchesSubcategory;
+  });
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-6">
-        <div className="relative flex-1 max-w-md group">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-fundacion-blue transition-colors" />
-          <input
-            type="text"
-            placeholder="Buscar entregas..."
-            className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-fundacion-blue/10 focus:border-fundacion-blue transition-all shadow-sm"
-          />
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="hidden lg:flex items-center gap-3 px-4 py-2 bg-fundacion-red/10 border border-fundacion-red/20 rounded-xl">
-            <Package className="w-4 h-4 text-fundacion-red" />
-            <span className="text-[10px] font-black text-fundacion-red uppercase tracking-widest">Nota: No se permite stock negativo</span>
+      {/* Actions Bar */}
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="relative flex-1 max-w-md group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-fundacion-blue transition-colors" />
+            <input
+              type="text"
+              placeholder="Buscar por producto, beneficiario o cédula..."
+              className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-fundacion-blue/10 focus:border-fundacion-blue transition-all shadow-sm"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
           </div>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center px-6 py-3 bg-fundacion-blue text-white rounded-2xl text-sm font-black hover:bg-blue-800 shadow-xl shadow-blue-900/20 transition-all active:scale-95 uppercase tracking-widest"
+          <div className="flex items-center gap-4">
+            <div className="hidden lg:flex items-center gap-3 px-4 py-2 bg-fundacion-red/10 border border-fundacion-red/20 rounded-xl">
+              <Package className="w-4 h-4 text-fundacion-red" />
+              <span className="text-[10px] font-black text-fundacion-red uppercase tracking-widest">Nota: No se permite stock negativo</span>
+            </div>
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center px-6 py-3 bg-fundacion-blue text-white rounded-2xl text-sm font-black hover:bg-blue-800 shadow-xl shadow-blue-900/20 transition-all active:scale-95 uppercase tracking-widest"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Registrar Entrega
+            </button>
+          </div>
+        </div>
+
+        {/* Filters Row */}
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-slate-400" />
+            <span className="text-xs font-bold text-slate-500 uppercase">Filtrar por:</span>
+          </div>
+          <select
+            className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-fundacion-blue/10"
+            value={filterCategoryId}
+            onChange={(e) => {
+              setFilterCategoryId(e.target.value);
+              setFilterSubcategoryId('');
+            }}
           >
-            <Plus className="w-4 h-4 mr-2" />
-            Registrar Entrega
-          </button>
+            <option value="">Todas las Categorías</option>
+            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select
+            className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-fundacion-blue/10 disabled:opacity-50"
+            disabled={!filterCategoryId}
+            value={filterSubcategoryId}
+            onChange={(e) => setFilterSubcategoryId(e.target.value)}
+          >
+            <option value="">Todas las Subcategorías</option>
+            {subcategories
+              .filter(s => s.category_id === filterCategoryId)
+              .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          {(filterCategoryId || filterSubcategoryId || searchQuery) && (
+            <button 
+              onClick={() => {
+                setFilterCategoryId('');
+                setFilterSubcategoryId('');
+                setSearchQuery('');
+              }}
+              className="text-xs font-bold text-fundacion-red hover:underline"
+            >
+              Limpiar filtros
+            </button>
+          )}
         </div>
       </div>
 
@@ -145,8 +252,8 @@ export default function DonationsOut() {
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-fundacion-blue mx-auto"></div>
                   </td>
                 </tr>
-              ) : donations.length > 0 ? (
-                donations.map((donation) => (
+              ) : filteredDonations.length > 0 ? (
+                filteredDonations.map((donation) => (
                   <tr key={donation.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center text-xs text-slate-600">
@@ -209,14 +316,22 @@ export default function DonationsOut() {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Beneficiario</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Beneficiario</label>
+                    <button 
+                      type="button"
+                      onClick={() => setIsBeneficiaryModalOpen(true)}
+                      className="text-[10px] font-black text-fundacion-blue uppercase hover:underline"
+                    >
+                      + Nuevo
+                    </button>
+                  </div>
                   <select
-                    required
                     className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-500 transition-all"
                     value={formData.beneficiary_id}
-                    onChange={(e) => setFormData({...formData, beneficiary_id: e.target.value})}
+                    onChange={(e) => setFormData({...formData, beneficiary_id: e.target.value || null})}
                   >
-                    <option value="">Seleccionar Beneficiario...</option>
+                    <option value="">Anónimo / Sin Registrar</option>
                     {beneficiaries.map(b => <option key={b.id} value={b.id}>{b.name} ({b.id_number})</option>)}
                   </select>
                 </div>
@@ -300,6 +415,52 @@ export default function DonationsOut() {
                 </button>
                 <button type="submit" className="px-6 py-2 bg-fundacion-blue text-white rounded-xl text-sm font-bold hover:bg-blue-800 shadow-md">
                   Confirmar Entrega
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Beneficiary Modal */}
+      {isBeneficiaryModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-900">Nuevo Beneficiario</h3>
+              <button onClick={() => setIsBeneficiaryModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleAddBeneficiary} className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">Nombre Completo</label>
+                <input
+                  autoFocus
+                  required
+                  type="text"
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                  value={newBeneficiaryName}
+                  onChange={(e) => setNewBeneficiaryName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">Cédula / ID</label>
+                <input
+                  required
+                  type="text"
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                  value={newBeneficiaryIdNumber}
+                  onChange={(e) => setNewBeneficiaryIdNumber(e.target.value)}
+                />
+              </div>
+              <div className="flex items-center justify-end space-x-3 pt-4">
+                <button type="button" onClick={() => setIsBeneficiaryModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">Cancelar</button>
+                <button 
+                  disabled={isSavingBeneficiary}
+                  type="submit" 
+                  className="px-6 py-2 bg-fundacion-blue text-white rounded-xl text-sm font-bold hover:bg-blue-800 disabled:opacity-50"
+                >
+                  {isSavingBeneficiary ? 'Creando...' : 'Crear Beneficiario'}
                 </button>
               </div>
             </form>
