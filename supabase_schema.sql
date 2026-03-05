@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS donations_in (
     product_id UUID REFERENCES products(id),
     donor_id UUID REFERENCES donors(id),
     quantity INTEGER NOT NULL CHECK (quantity > 0),
+    notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -55,6 +56,7 @@ CREATE TABLE IF NOT EXISTS donations_out (
     beneficiary_id UUID REFERENCES beneficiaries(id),
     quantity INTEGER NOT NULL CHECK (quantity > 0),
     delivered_by TEXT,
+    notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

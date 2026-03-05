@@ -75,7 +75,13 @@ export default function DonationsIn() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     try {
-      const { error } = await supabase.from('donations_in').insert([formData]);
+      const payload = {
+        donor_id: formData.donor_id || null,
+        product_id: formData.product_id,
+        quantity: formData.quantity,
+        notes: formData.notes
+      };
+      const { error } = await supabase.from('donations_in').insert([payload]);
       if (error) throw error;
       
       setIsModalOpen(false);
@@ -295,14 +301,15 @@ export default function DonationsIn() {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-bold text-slate-500 uppercase">Donante</label>
                     <button 
                       type="button"
                       onClick={() => setIsDonorModalOpen(true)}
-                      className="text-[10px] font-black text-fundacion-blue uppercase hover:underline"
+                      className="flex items-center text-[10px] font-black text-fundacion-blue uppercase hover:text-blue-700 transition-colors bg-blue-50 px-2 py-1 rounded-lg"
                     >
-                      + Nuevo
+                      <Plus className="w-3 h-3 mr-1" />
+                      Nuevo Donante
                     </button>
                   </div>
                   <select
