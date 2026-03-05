@@ -11,7 +11,7 @@ export default function Beneficiaries() {
   const [formData, setFormData] = useState({
     name: '',
     id_number: '',
-    contact_info: ''
+    contact: ''
   });
 
   useEffect(() => {
@@ -42,11 +42,23 @@ export default function Beneficiaries() {
       }
       setIsModalOpen(false);
       setEditingBeneficiary(null);
-      setFormData({ name: '', id_number: '', contact_info: '' });
+      setFormData({ name: '', id_number: '', contact: '' });
       fetchBeneficiaries();
     } catch (error) {
       console.error('Error saving beneficiary:', error);
       alert('Error al guardar beneficiario (puede que la cédula ya exista)');
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('¿Estás seguro de eliminar este beneficiario?')) return;
+    try {
+      const { error } = await supabase.from('beneficiaries').delete().eq('id', id);
+      if (error) throw error;
+      fetchBeneficiaries();
+    } catch (error) {
+      console.error('Error deleting beneficiary:', error);
+      alert('No se puede eliminar el beneficiario (puede tener registros asociados)');
     }
   }
 
@@ -64,7 +76,7 @@ export default function Beneficiaries() {
         <button 
           onClick={() => {
             setEditingBeneficiary(null);
-            setFormData({ name: '', id_number: '', contact_info: '' });
+            setFormData({ name: '', id_number: '', contact: '' });
             setIsModalOpen(true);
           }}
           className="flex items-center px-6 py-3 bg-fundacion-blue text-white rounded-2xl text-sm font-black hover:bg-blue-800 shadow-xl shadow-blue-900/20 transition-all active:scale-95 uppercase tracking-widest"
@@ -93,13 +105,19 @@ export default function Beneficiaries() {
                       setFormData({ 
                         name: beneficiary.name, 
                         id_number: beneficiary.id_number,
-                        contact_info: beneficiary.contact_info || '' 
+                        contact: beneficiary.contact || '' 
                       });
                       setIsModalOpen(true);
                     }}
                     className="p-1.5 text-slate-400 hover:text-fundacion-blue hover:bg-fundacion-blue/5 rounded-lg"
                   >
                     <Edit2 className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={() => handleDelete(beneficiary.id)}
+                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                  >
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -111,7 +129,7 @@ export default function Beneficiaries() {
               <div className="space-y-2">
                 <div className="flex items-center text-sm text-slate-600">
                   <Mail className="w-4 h-4 mr-2 text-slate-400" />
-                  <span className="truncate">{beneficiary.contact_info || 'Sin contacto'}</span>
+                  <span className="truncate">{beneficiary.contact || 'Sin contacto'}</span>
                 </div>
               </div>
             </div>
@@ -159,8 +177,8 @@ export default function Beneficiaries() {
                   rows={3}
                   placeholder="Email, teléfono, dirección..."
                   className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-500 transition-all resize-none"
-                  value={formData.contact_info}
-                  onChange={(e) => setFormData({...formData, contact_info: e.target.value})}
+                  value={formData.contact}
+                  onChange={(e) => setFormData({...formData, contact: e.target.value})}
                 />
               </div>
               <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-100">

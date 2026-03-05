@@ -14,14 +14,11 @@ export interface Subcategory {
 export interface Product {
   id: string;
   name: string;
-  category_id: string;
   subcategory_id: string;
-  sku: string;
   description: string;
-  stock: number;
-  unit: string;
-  low_stock_threshold: number;
+  current_stock: number;
   created_at: string;
+  category_id?: string;
   category?: Category;
   subcategory?: Subcategory;
 }
@@ -29,7 +26,7 @@ export interface Product {
 export interface Donor {
   id: string;
   name: string;
-  contact_info: string;
+  contact: string;
   created_at: string;
 }
 
@@ -37,7 +34,7 @@ export interface Beneficiary {
   id: string;
   name: string;
   id_number: string;
-  contact_info: string;
+  contact: string;
   created_at: string;
 }
 
@@ -46,7 +43,6 @@ export interface DonationIn {
   donor_id: string;
   product_id: string;
   quantity: number;
-  date: string;
   notes: string;
   created_at: string;
   donor?: Donor;
@@ -59,7 +55,6 @@ export interface DonationOut {
   product_id: string;
   quantity: number;
   delivered_by: string;
-  date: string;
   notes: string;
   created_at: string;
   beneficiary?: Beneficiary;

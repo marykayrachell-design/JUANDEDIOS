@@ -1,111 +1,117 @@
 -- SQL Schema for Fundación JUAN DE DIOS Inventory Management
+-- Actualizado con políticas de permisos totales y triggers de reversión de stock
 
 -- 1. Categories
-CREATE TABLE categories (
+CREATE TABLE IF NOT EXISTS categories (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL UNIQUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    name TEXT NOT NULL UNIQUE
 );
 
 -- 2. Subcategories
-CREATE TABLE subcategories (
+CREATE TABLE IF NOT EXISTS subcategories (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     category_id UUID REFERENCES categories(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(category_id, name)
 );
 
 -- 3. Products
-CREATE TABLE products (
+CREATE TABLE IF NOT EXISTS products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL,
-    category_id UUID REFERENCES categories(id),
     subcategory_id UUID REFERENCES subcategories(id),
-    sku TEXT UNIQUE,
+    name TEXT NOT NULL,
     description TEXT,
-    stock INTEGER DEFAULT 0 CHECK (stock >= 0),
-    unit TEXT DEFAULT 'unidades',
-    low_stock_threshold INTEGER DEFAULT 10,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    current_stock INTEGER DEFAULT 0 CHECK (current_stock >= 0)
 );
 
 -- 4. Donors
-CREATE TABLE donors (
+CREATE TABLE IF NOT EXISTS donors (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
-    contact_info TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    contact TEXT
 );
 
 -- 5. Beneficiaries
-CREATE TABLE beneficiaries (
+CREATE TABLE IF NOT EXISTS beneficiaries (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     id_number TEXT UNIQUE NOT NULL, -- Cédula/ID
-    contact_info TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    contact TEXT
 );
 
 -- 6. Donations In (Entradas)
-CREATE TABLE donations_in (
+CREATE TABLE IF NOT EXISTS donations_in (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    donor_id UUID REFERENCES donors(id),
     product_id UUID REFERENCES products(id),
+    donor_id UUID REFERENCES donors(id),
     quantity INTEGER NOT NULL CHECK (quantity > 0),
-    date DATE DEFAULT CURRENT_DATE,
-    notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- 7. Donations Out (Salidas/Entregas)
-CREATE TABLE donations_out (
+CREATE TABLE IF NOT EXISTS donations_out (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    beneficiary_id UUID REFERENCES beneficiaries(id),
     product_id UUID REFERENCES products(id),
+    beneficiary_id UUID REFERENCES beneficiaries(id),
     quantity INTEGER NOT NULL CHECK (quantity > 0),
-    delivered_by TEXT NOT NULL,
-    date DATE DEFAULT CURRENT_DATE,
-    notes TEXT,
+    delivered_by TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Triggers to update stock automatically
+-- Triggers to update stock automatically (INSERT, UPDATE, DELETE)
 
 -- Function for Inward Donations
-CREATE OR REPLACE FUNCTION update_stock_on_donation_in()
+CREATE OR REPLACE FUNCTION handle_stock_donation_in()
 RETURNS TRIGGER AS $$
 BEGIN
-    UPDATE products
-    SET stock = stock + NEW.quantity
-    WHERE id = NEW.product_id;
-    RETURN NEW;
+    IF (TG_OP = 'INSERT') THEN
+        UPDATE products SET current_stock = current_stock + NEW.quantity WHERE id = NEW.product_id;
+    ELSIF (TG_OP = 'UPDATE') THEN
+        UPDATE products SET current_stock = current_stock - OLD.quantity + NEW.quantity WHERE id = NEW.product_id;
+    ELSIF (TG_OP = 'DELETE') THEN
+        UPDATE products SET current_stock = current_stock - OLD.quantity WHERE id = OLD.product_id;
+    END IF;
+    RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS tr_update_stock_in ON donations_in;
 CREATE TRIGGER tr_update_stock_in
-AFTER INSERT ON donations_in
+AFTER INSERT OR UPDATE OR DELETE ON donations_in
 FOR EACH ROW
-EXECUTE FUNCTION update_stock_on_donation_in();
+EXECUTE FUNCTION handle_stock_donation_in();
 
 -- Function for Outward Donations
-CREATE OR REPLACE FUNCTION update_stock_on_donation_out()
+CREATE OR REPLACE FUNCTION handle_stock_donation_out()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Check if enough stock exists (Postgres CHECK constraint on products.stock also handles this)
-    UPDATE products
-    SET stock = stock - NEW.quantity
-    WHERE id = NEW.product_id;
-    RETURN NEW;
+    IF (TG_OP = 'INSERT') THEN
+        UPDATE products SET current_stock = current_stock - NEW.quantity WHERE id = NEW.product_id;
+    ELSIF (TG_OP = 'UPDATE') THEN
+        UPDATE products SET current_stock = current_stock + OLD.quantity - NEW.quantity WHERE id = NEW.product_id;
+    ELSIF (TG_OP = 'DELETE') THEN
+        UPDATE products SET current_stock = current_stock + OLD.quantity WHERE id = OLD.product_id;
+    END IF;
+    RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS tr_update_stock_out ON donations_out;
 CREATE TRIGGER tr_update_stock_out
-AFTER INSERT ON donations_out
+AFTER INSERT OR UPDATE OR DELETE ON donations_out
 FOR EACH ROW
-EXECUTE FUNCTION update_stock_on_donation_out();
+EXECUTE FUNCTION handle_stock_donation_out();
 
--- Enable Row Level Security (RLS) - Optional but recommended
--- For this demo, we assume the user will handle auth or keep it simple.
--- ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
--- ... and so on for other tables.
+-- Row Level Security (RLS) Policies
+-- Habilitar RLS y permitir todo para todas las tablas
+DO $$ 
+DECLARE 
+    t text;
+BEGIN
+    FOR t IN SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+    LOOP
+        EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+        EXECUTE format('DROP POLICY IF EXISTS "Allow All" ON %I', t);
+        EXECUTE format('CREATE POLICY "Allow All" ON %I FOR ALL USING (true) WITH CHECK (true)', t);
+    END LOOP;
+END $$;

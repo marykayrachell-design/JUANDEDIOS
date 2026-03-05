@@ -10,7 +10,8 @@ import {
   X,
   Info,
   HelpCircle,
-  LogOut
+  LogOut,
+  BookOpen
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -62,6 +63,7 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
     { id: 'donations_out', label: 'Salidas', icon: ArrowUpFromLine },
     { id: 'donors', label: 'Donantes', icon: HeartHandshake },
     { id: 'beneficiaries', label: 'Beneficiarios', icon: Users },
+    { id: 'help', label: 'Guía de Uso', icon: BookOpen },
   ];
 
   return (
@@ -129,16 +131,30 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
           {/* Sidebar Footer */}
           <div className="p-6">
             <button 
-              onClick={() => setShowHelp(!showHelp)}
-              className="flex items-center justify-between w-full p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-fundacion-yellow transition-all group"
+              onClick={() => {
+                setActiveTab('help');
+                setIsSidebarOpen(false);
+              }}
+              className={cn(
+                "flex items-center justify-between w-full p-4 rounded-2xl border transition-all group",
+                activeTab === 'help' 
+                  ? "bg-fundacion-yellow border-fundacion-yellow text-fundacion-blue shadow-lg shadow-yellow-500/20" 
+                  : "bg-slate-50 border-slate-100 hover:border-fundacion-yellow"
+              )}
             >
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-white rounded-lg shadow-sm group-hover:text-fundacion-orange">
+                <div className={cn(
+                  "p-2 rounded-lg shadow-sm transition-colors",
+                  activeTab === 'help' ? "bg-white text-fundacion-blue" : "bg-white text-slate-400 group-hover:text-fundacion-orange"
+                )}>
                   <HelpCircle className="w-4 h-4" />
                 </div>
-                <span className="text-xs font-bold text-slate-600">¿Necesitas ayuda?</span>
+                <span className={cn(
+                  "text-xs font-bold transition-colors",
+                  activeTab === 'help' ? "text-fundacion-blue" : "text-slate-600"
+                )}>Centro de Ayuda</span>
               </div>
-              <div className="w-2 h-2 rounded-full bg-fundacion-yellow animate-pulse" />
+              {activeTab !== 'help' && <div className="w-2 h-2 rounded-full bg-fundacion-yellow animate-pulse" />}
             </button>
           </div>
         </div>
@@ -164,6 +180,14 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
           </div>
 
           <div className="flex items-center gap-6">
+            <button 
+              onClick={() => setActiveTab('help')}
+              className="hidden sm:flex items-center gap-2 px-4 py-2 bg-fundacion-yellow/10 text-fundacion-blue rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-fundacion-yellow transition-all border border-fundacion-yellow/20 group"
+            >
+              <BookOpen className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+              Guía de Uso
+            </button>
+
             <div className="hidden md:flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-2xl border border-slate-100">
               <div className="w-2 h-2 rounded-full bg-fundacion-green" />
               <span className="text-xs font-bold text-slate-600">Sistema Online</span>
@@ -218,6 +242,7 @@ export default function Layout({ children, activeTab, setActiveTab }: LayoutProp
                           {activeTab === 'donations_out' && "Registra las entregas a beneficiarios. Es obligatorio ingresar la cédula del beneficiario y quién realiza la entrega para mantener el control."}
                           {activeTab === 'donors' && "Mantén un registro de todas las personas y empresas que apoyan a la fundación con sus donaciones."}
                           {activeTab === 'beneficiaries' && "Registra a las personas que reciben ayuda. Esto nos permite asegurar que las donaciones lleguen a quienes más lo necesitan."}
+                          {activeTab === 'help' && "Esta es la guía completa del sistema. Lee cada sección para convertirte en un experto gestionando la fundación."}
                         </p>
                       </div>
                       <button 

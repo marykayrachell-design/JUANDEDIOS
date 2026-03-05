@@ -12,6 +12,7 @@ import DonationsIn from './components/DonationsIn';
 import DonationsOut from './components/DonationsOut';
 import Donors from './components/Donors';
 import Beneficiaries from './components/Beneficiaries';
+import UserGuide from './components/UserGuide';
 import Login from './components/Login';
 import { Session } from '@supabase/supabase-js';
 
@@ -21,6 +22,9 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const handleNavigate = (e: any) => setActiveTab(e.detail);
+    window.addEventListener('navigate', handleNavigate);
+    
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -32,7 +36,10 @@ export default function App() {
       setSession(session);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('navigate', handleNavigate);
+    };
   }, []);
 
   if (loading) {
@@ -61,6 +68,8 @@ export default function App() {
         return <Donors />;
       case 'beneficiaries':
         return <Beneficiaries />;
+      case 'help':
+        return <UserGuide />;
       default:
         return <Dashboard />;
     }

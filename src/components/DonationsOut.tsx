@@ -1,5 +1,5 @@
 import { useEffect, useState, FormEvent } from 'react';
-import { Plus, Search, Calendar, User, Package, X, UserCheck } from 'lucide-react';
+import { Plus, Search, Calendar, User, Package, X, UserCheck, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { DonationOut, Beneficiary, Product, Category, Subcategory } from '../types';
 import { format } from 'date-fns';
@@ -19,7 +19,6 @@ export default function DonationsOut() {
     product_id: '',
     quantity: 1,
     delivered_by: '',
-    date: format(new Date(), 'yyyy-MM-dd'),
     notes: ''
   });
 
@@ -64,8 +63,8 @@ export default function DonationsOut() {
     
     // Validate stock
     const product = products.find(p => p.id === formData.product_id);
-    if (product && product.stock < formData.quantity) {
-      alert(`Stock insuficiente. Stock actual: ${product.stock}`);
+    if (product && product.current_stock < formData.quantity) {
+      alert(`Stock insuficiente. Stock actual: ${product.current_stock}`);
       return;
     }
 
@@ -79,13 +78,24 @@ export default function DonationsOut() {
         product_id: '',
         quantity: 1,
         delivered_by: '',
-        date: format(new Date(), 'yyyy-MM-dd'),
         notes: ''
       });
       fetchData();
     } catch (error) {
       console.error('Error recording delivery:', error);
       alert('Error al registrar la salida');
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('¿Estás seguro de eliminar este registro de entrega? El stock se ajustará automáticamente.')) return;
+    try {
+      const { error } = await supabase.from('donations_out').delete().eq('id', id);
+      if (error) throw error;
+      fetchData();
+    } catch (error) {
+      console.error('Error deleting donation out:', error);
+      alert('Error al eliminar el registro');
     }
   }
 
@@ -125,6 +135,7 @@ export default function DonationsOut() {
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Producto</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center">Cantidad</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Entregado por</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -140,7 +151,7 @@ export default function DonationsOut() {
                     <td className="px-6 py-4">
                       <div className="flex items-center text-xs text-slate-600">
                         <Calendar className="w-3 h-3 mr-2 text-slate-400" />
-                        {format(new Date(donation.date), 'dd MMM, yyyy', { locale: es })}
+                        {format(new Date(donation.created_at), 'dd MMM, yyyy', { locale: es })}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -164,11 +175,19 @@ export default function DonationsOut() {
                         {donation.delivered_by}
                       </div>
                     </td>
+                    <td className="px-6 py-4 text-right">
+                      <button 
+                        onClick={() => handleDelete(donation.id)}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400 text-sm">
+                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400 text-sm">
                     No hay registros de salida
                   </td>
                 </tr>
@@ -202,12 +221,14 @@ export default function DonationsOut() {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Fecha</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase">Cantidad</label>
                   <input
-                    type="date"
+                    required
+                    type="number"
+                    min="1"
                     className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-500 transition-all"
-                    value={formData.date}
-                    onChange={(e) => setFormData({...formData, date: e.target.value})}
+                    value={formData.quantity}
+                    onChange={(e) => setFormData({...formData, quantity: parseInt(e.target.value)})}
                   />
                 </div>
                 
@@ -250,20 +271,8 @@ export default function DonationsOut() {
                     <option value="">Seleccionar Producto...</option>
                     {products
                       .filter(p => (!selectedCategoryId || p.category_id === selectedCategoryId) && (!selectedSubcategoryId || p.subcategory_id === selectedSubcategoryId))
-                      .map(p => <option key={p.id} value={p.id}>{p.name} (Stock: {p.stock})</option>)}
+                      .map(p => <option key={p.id} value={p.id}>{p.name} (Stock: {p.current_stock})</option>)}
                   </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Cantidad</label>
-                  <input
-                    required
-                    type="number"
-                    min="1"
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-500 transition-all"
-                    value={formData.quantity}
-                    onChange={(e) => setFormData({...formData, quantity: parseInt(e.target.value)})}
-                  />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-slate-500 uppercase">Persona que entrega</label>

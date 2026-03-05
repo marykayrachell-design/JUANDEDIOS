@@ -6,7 +6,8 @@ import {
   Package,
   Calendar,
   ArrowRight,
-  Info
+  Info,
+  BookOpen
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -34,6 +35,12 @@ export default function Dashboard() {
   const [chartData, setChartData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // We need to pass setActiveTab to Dashboard if we want to navigate from here.
+  // But Dashboard is a child of App, and setActiveTab is in App.
+  // Let's check if we can use a prop or just rely on the sidebar.
+  // Actually, I'll just add the button and explain it's in the sidebar or use a window event.
+  // Better: I'll just add a descriptive block.
+
   useEffect(() => {
     fetchStats();
   }, []);
@@ -52,7 +59,7 @@ export default function Dashboard() {
 
       // 3. Low Stock & Total Products
       const { data: products } = await supabase.from('products').select('*');
-      const lowStock = products?.filter(p => p.stock <= p.low_stock_threshold) || [];
+      const lowStock = products?.filter(p => p.current_stock <= 5) || [];
       
       setStats({
         totalIn,
@@ -145,6 +152,13 @@ export default function Dashboard() {
                 <Calendar className="w-4 h-4 text-fundacion-yellow" />
                 <span className="text-xs font-bold uppercase tracking-widest">{format(new Date(), 'dd MMMM, yyyy', { locale: es })}</span>
               </div>
+              <button 
+                onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'help' }))}
+                className="flex items-center gap-2 px-4 py-2 bg-fundacion-yellow text-fundacion-blue rounded-xl font-black text-xs uppercase tracking-widest hover:bg-white transition-all shadow-lg shadow-yellow-500/20"
+              >
+                <BookOpen className="w-4 h-4" />
+                Ver Guía de Uso
+              </button>
             </div>
           </div>
         </div>
@@ -211,7 +225,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="h-[350px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="8 8" vertical={false} stroke="#f1f5f9" />
                 <XAxis 
@@ -263,10 +277,10 @@ export default function Dashboard() {
                 >
                   <div className="flex flex-col">
                     <span className="text-sm font-black text-slate-900 group-hover:text-fundacion-red transition-colors">{product.name}</span>
-                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-0.5">{product.sku || 'SIN SKU'}</span>
+                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-0.5">{product.description || 'SIN DESCRIPCIÓN'}</span>
                   </div>
                   <div className="flex flex-col items-end">
-                    <span className="text-lg font-black text-fundacion-red">{product.stock}</span>
+                    <span className="text-lg font-black text-fundacion-red">{product.current_stock}</span>
                     <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Stock</span>
                   </div>
                 </motion.div>

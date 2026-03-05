@@ -20,18 +20,21 @@ export default function Inventory() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [isSubcategoryModalOpen, setIsSubcategoryModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newSubcategoryName, setNewSubcategoryName] = useState('');
+  const [newSubcategoryCategoryId, setNewSubcategoryCategoryId] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
     name: '',
-    sku: '',
-    category_id: '',
     subcategory_id: '',
     description: '',
-    stock: 0,
-    unit: 'unidades',
-    low_stock_threshold: 10
+    current_stock: 0,
+    category_id: '' // Still needed for the UI to filter subcategories
   });
 
   useEffect(() => {
@@ -46,12 +49,19 @@ export default function Inventory() {
         { data: categoriesData },
         { data: subcategoriesData }
       ] = await Promise.all([
-        supabase.from('products').select('*, category:categories(*), subcategory:subcategories(*)').order('name'),
+        supabase.from('products').select('*, subcategory:subcategories(*, category:categories(*))').order('name'),
         supabase.from('categories').select('*').order('name'),
         supabase.from('subcategories').select('*').order('name')
       ]);
 
-      setProducts(productsData || []);
+      // Flatten the data for easier use
+      const flattenedProducts = (productsData || []).map(p => ({
+        ...p,
+        category: p.subcategory?.category,
+        category_id: p.subcategory?.category_id
+      }));
+
+      setProducts(flattenedProducts);
       setCategories(categoriesData || []);
       setSubcategories(subcategoriesData || []);
     } catch (error) {
@@ -62,23 +72,80 @@ export default function Inventory() {
   }
 
   const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    p.sku?.toLowerCase().includes(searchQuery.toLowerCase())
+    p.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  async function handleAddCategory(e: FormEvent) {
+    e.preventDefault();
+    if (!newCategoryName.trim()) return;
+    try {
+      setIsSaving(true);
+      const { data, error } = await supabase
+        .from('categories')
+        .insert([{ name: newCategoryName.trim() }])
+        .select()
+        .single();
+      if (error) throw error;
+      
+      setCategories([...categories, data]);
+      setFormData({ ...formData, category_id: data.id });
+      setNewCategoryName('');
+      setIsCategoryModalOpen(false);
+    } catch (error) {
+      console.error('Error creating category:', error);
+      alert('Error al crear la categoría');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleAddSubcategory(e: FormEvent) {
+    e.preventDefault();
+    const categoryId = newSubcategoryCategoryId || formData.category_id;
+    if (!newSubcategoryName.trim() || !categoryId) {
+      alert('Por favor selecciona una categoría y escribe un nombre');
+      return;
+    }
+    try {
+      setIsSaving(true);
+      const { data, error } = await supabase
+        .from('subcategories')
+        .insert([{ 
+          name: newSubcategoryName.trim(), 
+          category_id: categoryId 
+        }])
+        .select()
+        .single();
+      if (error) throw error;
+      
+      setSubcategories([...subcategories, data]);
+      // Si estamos en el modal de producto, auto-seleccionamos la nueva subcategoría
+      setFormData({ ...formData, category_id: categoryId, subcategory_id: data.id });
+      setNewSubcategoryName('');
+      setNewSubcategoryCategoryId('');
+      setIsSubcategoryModalOpen(false);
+    } catch (error) {
+      console.error('Error creating subcategory:', error);
+      alert('Error al crear la subcategoría');
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     try {
+      const { category_id, ...payload } = formData;
       if (editingProduct) {
         const { error } = await supabase
           .from('products')
-          .update(formData)
+          .update(payload)
           .eq('id', editingProduct.id);
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('products')
-          .insert([formData]);
+          .insert([payload]);
         if (error) throw error;
       }
       
@@ -86,13 +153,10 @@ export default function Inventory() {
       setEditingProduct(null);
       setFormData({
         name: '',
-        sku: '',
-        category_id: '',
         subcategory_id: '',
         description: '',
-        stock: 0,
-        unit: 'unidades',
-        low_stock_threshold: 10
+        current_stock: 0,
+        category_id: ''
       });
       fetchData();
     } catch (error) {
@@ -117,13 +181,10 @@ export default function Inventory() {
     setEditingProduct(product);
     setFormData({
       name: product.name,
-      sku: product.sku || '',
-      category_id: product.category_id,
       subcategory_id: product.subcategory_id,
       description: product.description || '',
-      stock: product.stock,
-      unit: product.unit,
-      low_stock_threshold: product.low_stock_threshold
+      current_stock: product.current_stock,
+      category_id: product.category_id || ''
     });
     setIsModalOpen(true);
   }
@@ -136,7 +197,7 @@ export default function Inventory() {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-fundacion-blue transition-colors" />
           <input
             type="text"
-            placeholder="Buscar por nombre o SKU..."
+            placeholder="Buscar por nombre..."
             className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-fundacion-blue/10 focus:border-fundacion-blue transition-all shadow-sm"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -152,13 +213,10 @@ export default function Inventory() {
               setEditingProduct(null);
               setFormData({
                 name: '',
-                sku: '',
-                category_id: '',
                 subcategory_id: '',
                 description: '',
-                stock: 0,
-                unit: 'unidades',
-                low_stock_threshold: 10
+                current_stock: 0,
+                category_id: ''
               });
               setIsModalOpen(true);
             }}
@@ -178,15 +236,14 @@ export default function Inventory() {
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Producto</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Categoría</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center">Stock</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Estado</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center">Stock Actual</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center">
+                  <td colSpan={4} className="px-6 py-12 text-center">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-fundacion-blue mx-auto"></div>
                   </td>
                 </tr>
@@ -196,7 +253,7 @@ export default function Inventory() {
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="text-sm font-semibold text-slate-900">{product.name}</span>
-                        <span className="text-xs text-slate-500 font-mono">{product.sku || 'N/A'}</span>
+                        <span className="text-[10px] text-slate-400 truncate max-w-[200px]">{product.description}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -206,25 +263,9 @@ export default function Inventory() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <span className={cn(
-                        "text-sm font-bold",
-                        product.stock <= product.low_stock_threshold ? "text-amber-600" : "text-slate-700"
-                      )}>
-                        {product.stock}
+                      <span className="text-sm font-bold text-slate-700">
+                        {product.current_stock}
                       </span>
-                      <span className="text-[10px] text-slate-400 ml-1">{product.unit}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {product.stock <= product.low_stock_threshold ? (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-100">
-                          <AlertCircle className="w-3 h-3 mr-1" />
-                          STOCK BAJO
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">
-                          NORMAL
-                        </span>
-                      )}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -246,7 +287,7 @@ export default function Inventory() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400 text-sm">
+                  <td colSpan={4} className="px-6 py-12 text-center text-slate-400 text-sm">
                     No se encontraron productos
                   </td>
                 </tr>
@@ -284,31 +325,52 @@ export default function Inventory() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">SKU / Código</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase">Stock Inicial</label>
                   <input
-                    type="text"
+                    type="number"
                     className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
-                    value={formData.sku}
-                    onChange={(e) => setFormData({...formData, sku: e.target.value})}
+                    value={formData.current_stock}
+                    onChange={(e) => setFormData({...formData, current_stock: parseInt(e.target.value)})}
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Categoría</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Categoría</label>
+                    <button 
+                      type="button"
+                      onClick={() => setIsCategoryModalOpen(true)}
+                      className="text-[10px] font-black text-fundacion-blue uppercase hover:underline"
+                    >
+                      + Nueva
+                    </button>
+                  </div>
                   <select
                     required
                     className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
                     value={formData.category_id}
-                    onChange={(e) => setFormData({...formData, category_id: e.target.value})}
+                    onChange={(e) => setFormData({...formData, category_id: e.target.value, subcategory_id: ''})}
                   >
                     <option value="">Seleccionar...</option>
                     {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Subcategoría</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Subcategoría</label>
+                    {formData.category_id && (
+                      <button 
+                        type="button"
+                        onClick={() => setIsSubcategoryModalOpen(true)}
+                        className="text-[10px] font-black text-fundacion-blue uppercase hover:underline"
+                      >
+                        + Nueva
+                      </button>
+                    )}
+                  </div>
                   <select
                     required
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                    disabled={!formData.category_id}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all disabled:opacity-50"
                     value={formData.subcategory_id}
                     onChange={(e) => setFormData({...formData, subcategory_id: e.target.value})}
                   >
@@ -317,25 +379,6 @@ export default function Inventory() {
                       .filter(s => s.category_id === formData.category_id)
                       .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Unidad de Medida</label>
-                  <input
-                    type="text"
-                    placeholder="unidades, kg, litros..."
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
-                    value={formData.unit}
-                    onChange={(e) => setFormData({...formData, unit: e.target.value})}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Umbral Stock Bajo</label>
-                  <input
-                    type="number"
-                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
-                    value={formData.low_stock_threshold}
-                    onChange={(e) => setFormData({...formData, low_stock_threshold: parseInt(e.target.value)})}
-                  />
                 </div>
               </div>
               <div className="space-y-1">
@@ -360,6 +403,92 @@ export default function Inventory() {
                   className="px-6 py-2 bg-fundacion-blue text-white rounded-xl text-sm font-bold hover:bg-blue-800 shadow-md shadow-blue-200 transition-all"
                 >
                   {editingProduct ? 'Actualizar' : 'Guardar Producto'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Category Modal */}
+      {isCategoryModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-900">Nueva Categoría</h3>
+              <button onClick={() => setIsCategoryModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleAddCategory} className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">Nombre de la Categoría</label>
+                <input
+                  autoFocus
+                  required
+                  type="text"
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                />
+              </div>
+              <div className="flex items-center justify-end space-x-3 pt-4">
+                <button type="button" onClick={() => setIsCategoryModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">Cancelar</button>
+                <button 
+                  disabled={isSaving}
+                  type="submit" 
+                  className="px-6 py-2 bg-fundacion-blue text-white rounded-xl text-sm font-bold hover:bg-blue-800 disabled:opacity-50"
+                >
+                  {isSaving ? 'Creando...' : 'Crear Categoría'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Subcategory Modal */}
+      {isSubcategoryModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-900">Nueva Subcategoría</h3>
+              <button onClick={() => setIsSubcategoryModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleAddSubcategory} className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">Categoría Perteneciente</label>
+                <select
+                  required
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                  value={newSubcategoryCategoryId || formData.category_id}
+                  onChange={(e) => setNewSubcategoryCategoryId(e.target.value)}
+                >
+                  <option value="">Seleccionar Categoría...</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">Nombre de la Subcategoría</label>
+                <input
+                  autoFocus
+                  required
+                  type="text"
+                  placeholder="Ej: Arroz, Camisas, etc."
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                  value={newSubcategoryName}
+                  onChange={(e) => setNewSubcategoryName(e.target.value)}
+                />
+              </div>
+              <div className="flex items-center justify-end space-x-3 pt-4">
+                <button type="button" onClick={() => setIsSubcategoryModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-600">Cancelar</button>
+                <button 
+                  disabled={isSaving}
+                  type="submit" 
+                  className="px-6 py-2 bg-fundacion-blue text-white rounded-xl text-sm font-bold hover:bg-blue-800 disabled:opacity-50"
+                >
+                  {isSaving ? 'Creando...' : 'Crear Subcategoría'}
                 </button>
               </div>
             </form>
